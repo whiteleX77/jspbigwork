@@ -4,6 +4,8 @@
 ================================================================================
 
 文档生成日期：2026-06-21
+最近更新：2026-06-21（新增商家自助改库存/上下架；管理员后台会员名册；
+          修正 OrderDao.getAllOrdersForAdmin 列名）
 适用项目路径：D:\jspweb\bigwork\bigwork
 
 
@@ -54,10 +56,14 @@ ProductDao 中实际包含了两套并行的业务功能，分别对应不同的
 【2. 当前主力 B2B2C “商品 product” 模型】（新功能都在这套上）
   - 对应表    ：product / orders / review
   - 关键方法  ：addProduct、getAllOnSaleProducts、getProductsByMerchant、
-                getProductById、updateProduct、changeProductStatus 等
+                getProductById、updateProduct、changeProductStatus、
+                updateStockByMerchant、changeStatusByMerchant 等
   - 状态值    ：on_sale（上架）/ off_sale（下架）
   - 核心特征  ：每个商品带 merchant_id（归属某商家）；商品评分 rating /
                 review_count 冗余存储在 product 表，由 updateProductRating 重算
+  - 数据隔离  ：商家自助操作（改库存 / 上下架）一律通过 SQL 的
+                WHERE product_id=? AND merchant_id=? 双条件，从数据库层面
+                保证商家只能动自己名下的商品，杜绝越权篡改他人货品
 
 ★ 当前所有的下单、购买、评价、发货、收货流程都建立在 product 模型之上。
 
@@ -145,7 +151,9 @@ Session 来实现权限控制。
   - checkUsernameExist(username)  注册时防重名校验。
   - insertUser(User)              新增用户（含 role 字段，支持注册成客户/商家）。
   - login(username, password)     登录验证，成功则返回带 role 的 User 对象。
-  - getAllUsers()                 管理员后台：查全站所有用户（按注册时间倒序）。
+  - getAllUsers()                 管理员后台：查全站所有用户（按注册时间倒序），
+                                  含 username/password/realName/phone/role/createTime，
+                                  供 admin.jsp“注册会员名册”展示账号与密码。
   - getUserById(userId)           按 ID 取用户/商家完整信息（用于详情页店铺信息）。
 
 ● src/dao/ProductDao.java —— 商品数据访问（两套模型都在这里，是最核心的 DAO）
@@ -162,8 +170,14 @@ Session 来实现权限控制。
   - getAllOnSaleProducts()        前台大厅取所有上架商品。
   - getProductById(productId)     查单件商品详情（含 merchantId、rating 等新字段）。
   - getAllProductsForAdmin()      管理员查全站所有商品（含上下架）。
-  - changeProductStatus(id,状态)  改商品上架/下架（on_sale / off_sale）。
+  - changeProductStatus(id,状态)  改商品上架/下架（on_sale / off_sale，管理员用）。
   - updateProduct(Product)        更新商品信息与库存（编辑、扣库存都用它）。
+  - updateStockByMerchant(productId, newStock, merchantId)
+                                  商家自助改库存：UPDATE ... WHERE product_id=?
+                                  AND merchant_id=?，带归属隔离，别家商品改不动。
+  - changeStatusByMerchant(productId, newStatus, merchantId)
+                                  商家自助上/下架：同样带 merchant_id 双条件隔离，
+                                  状态由调用方（Servlet）做 on_sale/off_sale 白名单校验。
   - getProductsByCondition(关键词,分类)
                                   前台动态检索：用 StringBuilder 动态拼 WHERE，
                                   支持名称模糊查询(LIKE) + 分类筛选，参数化绑定。
@@ -187,8 +201,12 @@ Session 来实现权限控制。
                                   商家工作台：本店收到的所有订单（含收货地址/电话）。
   - updateOrderStatus(orderId, 新状态)
                                   核心状态机：发货、收货、评价都靠它改状态值。
-  - getAllOrders()                管理员“上帝视角”：四表联查全平台订单。
-  - getAllOrdersForAdmin()        另一版管理员订单查询（字段略有差异）。
+  - getAllOrders()                管理员“上帝视角”：四表联查全平台订单（实际在用）。
+  - getAllOrdersForAdmin()        另一版管理员订单查询。当前无任何 Servlet 调用
+                                  （后台实际走 getAllOrders）；其原 SQL 误用了
+                                  total_price/order_time/user_id/buy_count 等表中不存在
+                                  的列，已修正为真实列 price/create_time/buyer_id，
+                                  避免日后被调用时抛 SQL 异常。
 
 --------------------------------------------------------------------------------
 【servlet 控制器层】
@@ -246,6 +264,15 @@ Session 来实现权限控制。
 ● src/servlet/ShipOrderServlet.java（/ShipOrderServlet, GET）
   - 商家发货：把订单状态由 0（待发货）改为 1（已发货），刷新商家工作台。
 
+● src/servlet/MerchantUpdateStockServlet.java（/MerchantUpdateStockServlet, POST）
+  - 商家自助改库存：拦截非 merchant；从 Session 取 merchantId，接收
+    productId 与 stock（校验库存非负），调 updateStockByMerchant 更新，
+    弹窗提示后跳回 MerchantDashboardServlet。改不动别家商品（DAO 层 merchant_id 隔离）。
+
+● src/servlet/MerchantChangeStatusServlet.java（/MerchantChangeStatusServlet, GET）
+  - 商家自助上/下架：拦截非 merchant；对 status 做 on_sale/off_sale 白名单校验，
+    调 changeStatusByMerchant 改自己商品的状态，重定向刷新工作台。
+
 ★ 管理员侧
 ● src/servlet/AdminDashboardServlet.java（/AdminDashboardServlet, GET）
   - 后台总控大盘：强制拦截非 admin；汇总全站用户、全站商品、全平台订单，
@@ -269,9 +296,11 @@ Session 来实现权限控制。
   - detail.jsp           商品详情页（商品+店铺+推荐+评价+下单表单）
   - shop.jsp             商家店铺主页
   - myOrders.jsp         买家“我的订单”（含确认收货/评价入口）
-  - merchant.jsp         商家工作台（我的商品 + 收到的订单 + 发货）
+  - merchant.jsp         商家工作台（我的商品含库存输入框+保存/下架·上架按钮
+                         + 收到的订单 + 发货）
   - merchantAddProduct.jsp  商家上架商品表单（含图片上传）
-  - admin.jsp            管理员后台大盘（用户/商品/订单总览）
+  - admin.jsp            管理员后台大盘（注册会员名册[账号/密码/身份]
+                         + 用户/商品/订单总览）
   - adminEditProduct.jsp 管理员编辑商品表单
   - orders.jsp           订单相关页面
   - support.jsp          客服/帮助页
@@ -303,6 +332,8 @@ Session 来实现权限控制。
 【流程四：商家经营】
   MerchantDashboardServlet（看货+看单）
        → MerchantAddProductServlet（上架，传图）
+       → MerchantUpdateStockServlet（自助改库存）
+       → MerchantChangeStatusServlet（自助下架 / 重新上架）
        → ShipOrderServlet（发货）
 
 【流程五：管理员监管】
@@ -316,7 +347,8 @@ Session 来实现权限控制。
 ================================================================================
 
   1. 三层 MVC 严格分层：SQL 只写在 DAO，绝不出现在 Servlet/JSP。
-  2. 数据隔离：商家通过 WHERE merchant_id=? 实现物理级数据隔离，只看自己的货/单。
+  2. 数据隔离：商家通过 WHERE merchant_id=? 实现物理级数据隔离，只看自己的货/单；
+     商家自助改库存/上下架时，UPDATE 也带 merchant_id 双条件，越权操作直接命中 0 行。
   3. 防 SQL 注入：所有 DAO 一律用 PreparedStatement + ? 占位符参数化，
      即便动态检索(getProductsByCondition) 也是动态拼 SQL 结构、参数仍走绑定。
   4. 订单状态机：用一个整型 logisticsStatus(0/1/2/3) 配合 updateOrderStatus
