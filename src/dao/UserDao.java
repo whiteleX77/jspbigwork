@@ -85,6 +85,7 @@ public class UserDao {
                 User u = new User();
                 u.setUserId(rs.getInt("user_id"));
                 u.setUsername(rs.getString("username"));
+                u.setPassword(rs.getString("password")); // 🌟 管理员后台需展示登录密码
                 u.setRealName(rs.getString("real_name"));
                 u.setPhone(rs.getString("phone")); // 🌟 确保抓取手机号，后台才不会显示空
                 u.setRole(rs.getString("role"));

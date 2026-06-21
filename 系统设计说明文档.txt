@@ -1,0 +1,346 @@
+================================================================================
+            校园二手 / B2B2C 商城系统  详细设计说明文档
+            （campus_secondhand —— JSP + Servlet 大作业）
+================================================================================
+
+文档生成日期：2026-06-21
+适用项目路径：D:\jspweb\bigwork\bigwork
+
+
+================================================================================
+一、项目总体概述
+================================================================================
+
+本项目是一个基于 Java Web 经典三层 MVC 架构的“校园二手 / B2B2C 多商家商城”，
+采用纯手写的 Servlet + JSP 技术栈，没有使用 Spring、Maven、Gradle 等任何框架
+或构建工具，是一个标准的 IntelliJ IDEA Web 模块。
+
+【技术选型】
+  - 语言/平台 ：Java（Jakarta Servlet 规范，jakarta.servlet.* 命名空间）
+  - 运行容器  ：Apache Tomcat 11.0.20
+  - 视图层    ：JSP（位于 web/ 目录）
+  - 数据库    ：MySQL，通过 JDBC 直连（mysql-connector-j-9.5.0.jar）
+  - 数据库名  ：campus_secondhand（localhost:3306）
+  - 界面语言  ：中文（注释、提示文字均为中文，UI 偏 Apple 风格）
+
+【三层架构分包】（全部位于 src/ 下）
+  - servlet/  控制器层（C）：接收请求、做权限校验、调用 DAO、返回响应
+  - dao/      数据访问层    ：纯 JDBC 操作数据库，封装所有 SQL
+  - bean/     模型层（M）   ：JavaBean，既当数据模型也当视图对象（VO）
+  - util/     工具层        ：数据库连接工厂 DBcon、验证码图片 ImageServlet
+  - web/      视图层（V）   ：JSP 页面 + WEB-INF 配置
+
+【核心交互模式（两种响应方式）】
+  1. 动作类请求（增删改、登录）：Servlet 直接向浏览器写出一段内联 JavaScript，
+     形如  <script>alert('提示语'); location.href='跳转地址';</script>
+     用 alert 弹窗提示用户，再用 location.href 完成页面跳转。
+  2. 页面渲染类请求（列表、详情展示）：Servlet 把数据 setAttribute 到 request，
+     再通过 RequestDispatcher.forward 转发到对应 JSP 渲染。
+
+
+================================================================================
+二、两套并存的领域模型（重要！容易混淆）
+================================================================================
+
+ProductDao 中实际包含了两套并行的业务功能，分别对应不同的数据库表：
+
+【1. 旧版 C2C “闲置 item” 模型】（早期版本，部分保留）
+  - 对应表    ：item / item_image
+  - 关键方法  ：insertItemAndGetId、getAllActiveItems、getItemById、
+                getItemsByUserId、getAllItemsForAdmin、changeItemStatus
+  - 状态值    ：active（在售）/ sold（已售）/ off（下架）
+  - 多图机制  ：通过 item_image.sort_no 排序，取最小者为首图
+
+【2. 当前主力 B2B2C “商品 product” 模型】（新功能都在这套上）
+  - 对应表    ：product / orders / review
+  - 关键方法  ：addProduct、getAllOnSaleProducts、getProductsByMerchant、
+                getProductById、updateProduct、changeProductStatus 等
+  - 状态值    ：on_sale（上架）/ off_sale（下架）
+  - 核心特征  ：每个商品带 merchant_id（归属某商家）；商品评分 rating /
+                review_count 冗余存储在 product 表，由 updateProductRating 重算
+
+★ 当前所有的下单、购买、评价、发货、收货流程都建立在 product 模型之上。
+
+
+================================================================================
+三、权限与角色体系（Auth & Roles）
+================================================================================
+
+系统没有使用任何安全框架或过滤器（Filter），完全靠每个 Servlet 自己手动检查
+Session 来实现权限控制。
+
+【登录流程】（LoginServlet）
+  1. 先校验验证码：把表单提交的 code 与 Session 中的 piccode 比对（忽略大小写）
+  2. 校验通过后调用 UserDao.login 验证用户名密码
+  3. 登录成功，把 userId、userName、userRole 三个值存入 HttpSession
+  4. 按角色“三线分发”跳转到不同首页
+
+【三种角色】（role 字段）
+  - admin    系统管理员 → 跳转 AdminDashboardServlet（后台数据大盘）
+  - merchant 入驻商家   → 跳转 MerchantDashboardServlet（商家工作台）
+  - customer 普通客户   → 跳转 IndexServlet（前台购物大厅）
+
+【关键设计】
+  - 一个用户的 userId 同时就是他的 merchantId（商家身份用同一个主键）。
+  - 每个受保护的 Servlet 都会重新读取 session.getAttribute("userRole") 自查权限，
+    非法角色会被弹窗拦截或重定向回 login.jsp。
+
+
+================================================================================
+四、各源代码文件功能逐一详解
+================================================================================
+
+--------------------------------------------------------------------------------
+【util 工具层】
+--------------------------------------------------------------------------------
+
+● src/util/DBcon.java —— 数据库连接工厂
+  - 唯一职责：提供 getConnection() 返回一个 JDBC 连接。
+  - 数据库 URL、用户名、密码（硬编码 root / 589964544gjh）全部写死在此文件中，
+    没有外部配置文件。要改数据库连接信息只能改这里。
+  - 加载驱动 com.mysql.cj.jdbc.Driver，URL 中配置了 UTF-8 编码与上海时区。
+  - 全系统所有 DAO 方法都是 new 一个 DBcon，单次请求开单个连接，无连接池。
+
+● src/util/ImageServlet.java —— 图形验证码生成器（映射 /ImageServlet）
+  - doGet 中用 java.awt.BufferedImage 动态绘制一张 100×35 的验证码图片。
+  - 随机生成 4 位字符（从去掉易混淆字符的池 "23456789AB...xyz" 中取）。
+  - 关键：把答案转成小写后存入 Session 的 "piccode" 属性，供登录时比对。
+  - 最后用 ImageIO.write 把 JPG 图片直接写到响应输出流（前端 <img> 引用它）。
+
+--------------------------------------------------------------------------------
+【bean 模型层】
+--------------------------------------------------------------------------------
+
+● src/bean/User.java —— 用户实体
+  - 字段：userId、username、password、realName、phone、role、createTime 等。
+  - 设计巧思：商家的 realName 字段被复用为“店铺名称”。
+
+● src/bean/Product.java —— 商品实体（两套模型共用一个 Bean）
+  - 旧 item 模型字段：itemId、userId、categoryId、title、itemCondition、
+    campusLocation、contactWay、status、mainImage、images(List<ItemImage>) 等。
+  - 新 product 模型字段：productId、name、category、brand、stock、
+    merchantId（所属商家）、rating（综合星级）、reviewCount（评价数）。
+  - 一个 Bean 承载两套字段，是导致两套模型“同居”的根源。
+
+● src/bean/OrderVO.java —— 订单视图对象
+  - 基础字段：orderId、orderNo（流水号 ORD+时间戳）、productId、totalPrice、
+    buyerPhone、shippingAddress 等。
+  - 防越权字段：buyerId（买家身份）、merchantId（卖家身份）。
+  - 核心状态机字段 logisticsStatus（物流/订单状态）：
+        0 = 待发货, 1 = 已发货, 2 = 已签收, 3 = 已评价
+  - 连表展示字段：productName、mainImage、buyerName、merchantName（由 JOIN 填充）。
+
+● src/bean/Review.java —— 评价实体
+  - 字段：reviewId、rating(1-5星)、content、createTime、username(连表查买家名)。
+
+● src/bean/ItemImage.java —— 商品图片实体（旧 item 模型用）
+  - 字段：imageId、itemId、imageUrl、sortNo（排序号，1 为首图）。
+  - 注意：此类只声明了字段，Getter/Setter 尚未生成（代码里留了 TODO）。
+
+--------------------------------------------------------------------------------
+【dao 数据访问层】
+--------------------------------------------------------------------------------
+
+● src/dao/UserDao.java —— 用户数据访问
+  - checkUsernameExist(username)  注册时防重名校验。
+  - insertUser(User)              新增用户（含 role 字段，支持注册成客户/商家）。
+  - login(username, password)     登录验证，成功则返回带 role 的 User 对象。
+  - getAllUsers()                 管理员后台：查全站所有用户（按注册时间倒序）。
+  - getUserById(userId)           按 ID 取用户/商家完整信息（用于详情页店铺信息）。
+
+● src/dao/ProductDao.java —— 商品数据访问（两套模型都在这里，是最核心的 DAO）
+  旧 item 模型相关：
+  - insertItemAndGetId(item)      发布闲置并用 RETURN_GENERATED_KEYS 取回自增ID。
+  - getAllActiveItems()           首页取在售商品，子查询关联取首图。
+  - getItemById(itemId)           取单个闲置详情。
+  - getItemsByUserId(userId)      查某用户发布过的全部闲置（含各种状态）。
+  - getAllItemsForAdmin()         管理员查全部闲置。
+  - changeItemStatus(id, status)  管理员改闲置状态（如强制下架 off）。
+
+  新 product 模型相关（主力）：
+  - addProduct(Product)           商家上架新商品（强制写入 merchant_id）。
+  - getAllOnSaleProducts()        前台大厅取所有上架商品。
+  - getProductById(productId)     查单件商品详情（含 merchantId、rating 等新字段）。
+  - getAllProductsForAdmin()      管理员查全站所有商品（含上下架）。
+  - changeProductStatus(id,状态)  改商品上架/下架（on_sale / off_sale）。
+  - updateProduct(Product)        更新商品信息与库存（编辑、扣库存都用它）。
+  - getProductsByCondition(关键词,分类)
+                                  前台动态检索：用 StringBuilder 动态拼 WHERE，
+                                  支持名称模糊查询(LIKE) + 分类筛选，参数化绑定。
+  - getProductsByMerchant(merchantId)
+                                  商家数据隔离：只查自己名下的货（WHERE merchant_id）。
+  - getShopOtherProducts(merchantId, 排除ID)
+                                  商品详情页“本店其他在售商品”推荐（最多4件）。
+  - getOnSaleProductsByMerchant(merchantId)
+                                  店铺主页：某商家全部在售商品。
+  - getReviewsByProduct(productId)
+                                  取某商品全部评价（review JOIN user 拿买家名）。
+  - addReview(...)                写入一条真实评价记录。
+  - updateProductRating(productId)
+                                  用 SQL 聚合 COUNT/AVG 重算并回写商品平均星级与评价数。
+
+● src/dao/OrderDao.java —— 订单数据访问
+  - createOrder(OrderVO)          买家付款成功后生成订单，初始状态 0（待发货）。
+  - getOrdersByUserId / getOrdersByBuyer(buyerId)
+                                  买家“我的订单”：订单 JOIN 商品 JOIN 商家。
+  - getOrdersByMerchantId(merchantId)
+                                  商家工作台：本店收到的所有订单（含收货地址/电话）。
+  - updateOrderStatus(orderId, 新状态)
+                                  核心状态机：发货、收货、评价都靠它改状态值。
+  - getAllOrders()                管理员“上帝视角”：四表联查全平台订单。
+  - getAllOrdersForAdmin()        另一版管理员订单查询（字段略有差异）。
+
+--------------------------------------------------------------------------------
+【servlet 控制器层】
+--------------------------------------------------------------------------------
+
+★ 认证与首页类
+● src/servlet/RegisterServlet.java（/RegisterServlet, POST）
+  - 注册：先防重名，再封装 User（含所选 role），调用 insertUser 入库。
+  - 成功弹窗后跳 login.jsp。
+
+● src/servlet/LoginServlet.java（/LoginServlet, POST）
+  - 登录核心：验证码校验 → 账密校验 → 写 Session → 按 admin/merchant/customer
+    三线分发到不同主页。控制台还打印了验证码追踪日志（调试用）。
+
+● src/servlet/LogoutServlet.java（/LogoutServlet, GET）
+  - 注销：session.invalidate() 销毁会话，重定向回 IndexServlet。
+
+● src/servlet/IndexServlet.java（/IndexServlet, GET/POST）
+  - 前台购物大厅入口：接收 keyword/category，调 getProductsByCondition 检索，
+    把商品列表 + 回显的搜索条件转发到 index.jsp。
+
+★ 客户（买家）侧
+● src/servlet/ItemDetailServlet.java（/ItemDetailServlet, GET）
+  - 商品详情页：根据 id 一次性组装四份数据并转发到 detail.jsp：
+    ① 商品本身 ② 所属店铺(商家) ③ 本店其他推荐商品 ④ 该商品的评价列表。
+
+● src/servlet/ShopServlet.java（/ShopServlet, GET）
+  - 店铺主页：按 merchantId 取店铺信息 + 该商家全部在售商品，转发 shop.jsp。
+
+● src/servlet/BuyServlet.java（/BuyServlet, POST）
+  - 下单购买：校验登录 → 查商品并判断库存>0 → 扣减库存(updateProduct) →
+    封装 OrderVO（生成 ORD+时间戳流水号，从商品身上剥离卖家ID）→ createOrder
+    写库 → 成功跳转 MyOrdersServlet。
+
+● src/servlet/MyOrdersServlet.java（/MyOrdersServlet, GET）
+  - 我的订单：校验登录后，按 userId 查买家全部订单，转发 myOrders.jsp。
+
+● src/servlet/ConfirmReceiptServlet.java（/ConfirmReceiptServlet, GET）
+  - 买家确认收货：把订单状态由 1（已发货）改为 2（已签收），刷新订单页。
+
+● src/servlet/SubmitReviewServlet.java（/SubmitReviewServlet, POST）
+  - 提交评价：① addReview 存评价 ② 订单状态改为 3（已评价）
+    ③ updateProductRating 自动重算商品星级。三步联动。
+
+★ 商家侧
+● src/servlet/MerchantDashboardServlet.java（/MerchantDashboardServlet, GET）
+  - 商家工作台：拦截非 merchant；查本商家的商品列表 + 收到的订单，转发 merchant.jsp。
+
+● src/servlet/MerchantAddProductServlet.java（/MerchantAddProductServlet, POST）
+  - 商家上架商品：带 @MultipartConfig 处理图片上传。
+  - 安检只允许 merchant；从 Session 取 merchantId 打到商品上。
+  - 图片用 UUID 重命名后写入【部署目录】images/products（非源码目录），
+    数据库只存文件名字符串；最后 addProduct 入库。
+
+● src/servlet/ShipOrderServlet.java（/ShipOrderServlet, GET）
+  - 商家发货：把订单状态由 0（待发货）改为 1（已发货），刷新商家工作台。
+
+★ 管理员侧
+● src/servlet/AdminDashboardServlet.java（/AdminDashboardServlet, GET）
+  - 后台总控大盘：强制拦截非 admin；汇总全站用户、全站商品、全平台订单，
+    并统计总数（totalUsers/totalItems/totalOrders），转发 admin.jsp。
+
+● src/servlet/AdminOffShelfServlet.java（/AdminOffShelfServlet, GET）
+  - 管理员强制下架：把指定商品 changeProductStatus 改为 off_sale，刷新大盘。
+
+● src/servlet/AdminEditProductServlet.java（/AdminEditProductServlet, GET+POST）
+  - 双动作 Servlet（带 @MultipartConfig）：
+    doGet  —— 点“编辑”时查出旧数据铺到 adminEditProduct.jsp 表单。
+    doPost —— 提交修改；若未选新图则用隐藏域 oldImage 保留原图，调 updateProduct。
+
+--------------------------------------------------------------------------------
+【web 视图层（JSP 页面）】
+--------------------------------------------------------------------------------
+
+  - index.jsp            前台购物大厅首页（商品列表 + 搜索/分类）
+  - login.jsp            登录页（含验证码图片 /ImageServlet）
+  - register.jsp         注册页（可选客户/商家身份）
+  - detail.jsp           商品详情页（商品+店铺+推荐+评价+下单表单）
+  - shop.jsp             商家店铺主页
+  - myOrders.jsp         买家“我的订单”（含确认收货/评价入口）
+  - merchant.jsp         商家工作台（我的商品 + 收到的订单 + 发货）
+  - merchantAddProduct.jsp  商家上架商品表单（含图片上传）
+  - admin.jsp            管理员后台大盘（用户/商品/订单总览）
+  - adminEditProduct.jsp 管理员编辑商品表单
+  - orders.jsp           订单相关页面
+  - support.jsp          客服/帮助页
+
+  JSP 从 request 属性中取出 Servlet 装好的数据进行渲染，不直接写 SQL。
+
+
+================================================================================
+五、典型业务流程串讲（数据如何在三层间流动）
+================================================================================
+
+【流程一：用户注册登录】
+  register.jsp → RegisterServlet → UserDao.insertUser → user 表
+  login.jsp(+ImageServlet验证码) → LoginServlet → UserDao.login
+       → 写 Session(userId/userName/userRole) → 按角色三线跳转
+
+【流程二：客户浏览并下单（B2B2C 主流程）】
+  IndexServlet → ProductDao.getProductsByCondition → index.jsp 商品列表
+       → 点商品 → ItemDetailServlet（商品+店铺+推荐+评价）→ detail.jsp
+       → 填地址电话提交 → BuyServlet（判库存→扣库存→createOrder）
+       → MyOrdersServlet → myOrders.jsp
+
+【流程三：订单状态机（四态流转）】
+  下单 createOrder      → 状态 0（待发货）
+  商家 ShipOrderServlet → 状态 1（已发货）
+  买家 ConfirmReceipt   → 状态 2（已签收）
+  买家 SubmitReview     → 状态 3（已评价）+ 触发商品星级重算
+
+【流程四：商家经营】
+  MerchantDashboardServlet（看货+看单）
+       → MerchantAddProductServlet（上架，传图）
+       → ShipOrderServlet（发货）
+
+【流程五：管理员监管】
+  AdminDashboardServlet（用户/商品/订单全局总览）
+       → AdminEditProductServlet（编辑商品）
+       → AdminOffShelfServlet（强制下架）
+
+
+================================================================================
+六、关键技术点与设计亮点
+================================================================================
+
+  1. 三层 MVC 严格分层：SQL 只写在 DAO，绝不出现在 Servlet/JSP。
+  2. 数据隔离：商家通过 WHERE merchant_id=? 实现物理级数据隔离，只看自己的货/单。
+  3. 防 SQL 注入：所有 DAO 一律用 PreparedStatement + ? 占位符参数化，
+     即便动态检索(getProductsByCondition) 也是动态拼 SQL 结构、参数仍走绑定。
+  4. 订单状态机：用一个整型 logisticsStatus(0/1/2/3) 配合 updateOrderStatus
+     一个方法驱动发货、收货、评价全流程。
+  5. 评分自动化：评价写入后用 SQL 聚合 AVG/COUNT 自动回写商品冗余评分字段。
+  6. 验证码安全：图片答案存 Session，登录时服务端比对，防机器人。
+  7. 自增主键回填：insertItemAndGetId 用 RETURN_GENERATED_KEYS 取回新ID。
+  8. 图片上传：@MultipartConfig + Part，UUID 防重名，存入部署目录 images/products。
+  9. 中文乱码防护：Servlet 顶部统一 setCharacterEncoding("UTF-8") +
+     UTF-8 内容类型；JDBC URL 也配了 UTF-8。
+  10. 编码风格：动作类响应统一用内联 <script>alert();location.href</script>，
+      页面类响应统一用 RequestDispatcher.forward。
+
+
+================================================================================
+七、环境与运行说明
+================================================================================
+
+  - 无命令行构建脚本，开发依赖 IntelliJ IDEA + Tomcat 11 运行配置，部署 web/ 工件。
+  - 运行前置：本机 MySQL 必须已建好 campus_secondhand 库及相关表
+    （user / item / item_image / product / orders / review）。
+  - 数据库连接信息（含密码）写死在 src/util/DBcon.java，需按本机环境修改。
+  - 编译输出目录：web/WEB-INF/classes；MySQL 驱动位于 web/WEB-INF/lib。
+
+================================================================================
+                                 文档结束
+================================================================================

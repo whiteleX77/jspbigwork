@@ -49,12 +49,13 @@ public class OrderDao {
     public List<OrderVO> getAllOrdersForAdmin() {
         List<OrderVO> list = new ArrayList<>();
         // 三表联查：订单表(o) + 商品表(p) + 用户表(u)
-        String sql = "SELECT o.order_id, o.product_id, o.buy_count, o.total_price, o.order_time, o.buyer_phone, o.shipping_address, " +
+        // 列名对齐 orders 表真实结构：price / create_time / buyer_id（原 total_price/order_time/user_id/buy_count 在表中不存在）
+        String sql = "SELECT o.order_id, o.product_id, o.price, o.create_time, o.buyer_phone, o.shipping_address, " +
                 "p.name, u.username as buyer_name " +
                 "FROM orders o " +
                 "JOIN product p ON o.product_id = p.product_id " +
-                "JOIN user u ON o.user_id = u.user_id " +
-                "ORDER BY o.order_time DESC";
+                "JOIN user u ON o.buyer_id = u.user_id " +
+                "ORDER BY o.create_time DESC";
 
         DBcon db = new DBcon();
         try (Connection conn = db.getConnection();
@@ -65,11 +66,10 @@ public class OrderDao {
                 vo.setOrderId(rs.getInt("order_id"));
                 vo.setProductName(rs.getString("name"));
                 vo.setBuyerName(rs.getString("buyer_name"));
-                vo.setBuyCount(rs.getInt("buy_count"));
-                vo.setTotalPrice(rs.getDouble("total_price"));
+                vo.setTotalPrice(rs.getDouble("price"));
                 vo.setBuyerPhone(rs.getString("buyer_phone"));
                 vo.setShippingAddress(rs.getString("shipping_address"));
-                vo.setOrderTime(rs.getString("order_time"));
+                vo.setOrderTime(rs.getString("create_time"));
                 list.add(vo);
             }
         } catch (Exception e) { e.printStackTrace(); }

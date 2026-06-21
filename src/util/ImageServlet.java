@@ -1,3 +1,4 @@
+//图形验证码生成器
 package util;
 
 import java.awt.Color;

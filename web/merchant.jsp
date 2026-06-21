@@ -101,7 +101,19 @@
         <% } %>
       </td>
       <td>
-        <a href="#" style="color:var(--apple-blue); text-decoration:none; font-weight:600;">修改库存</a>
+        <form action="MerchantUpdateStockServlet" method="post" style="display:inline-flex; align-items:center; gap:6px; margin-right:14px;">
+          <input type="hidden" name="productId" value="<%= p.getProductId() %>">
+          <input type="number" name="stock" value="<%= p.getStock() %>" min="0" style="width:64px; padding:6px 8px; border:1px solid rgba(0,0,0,0.1); border-radius:8px; font-size:13px; background:rgba(255,255,255,0.6);">
+          <button type="submit" style="background:var(--apple-blue); color:#fff; border:none; padding:7px 14px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer;">保存库存</button>
+        </form>
+        <%
+          String opStatus = p.getStatus() != null ? p.getStatus().trim() : "";
+          if ("on_sale".equals(opStatus)) {
+        %>
+        <a href="MerchantChangeStatusServlet?productId=<%= p.getProductId() %>&status=off_sale" onclick="return confirm('确定要下架该商品吗？下架后买家将无法看到它。');" style="color:#ff3b30; text-decoration:none; font-weight:600;">下架</a>
+        <% } else { %>
+        <a href="MerchantChangeStatusServlet?productId=<%= p.getProductId() %>&status=on_sale" style="color:#248a3d; text-decoration:none; font-weight:600;">重新上架</a>
+        <% } %>
       </td>
     </tr>
     <%

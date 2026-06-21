@@ -95,6 +95,45 @@
   </div>
 
   <div class="data-panel">
+    <h3>👤 平台注册会员名册（账号 / 密码 / 身份）</h3>
+    <table>
+      <thead>
+      <tr>
+        <th>用户ID</th>
+        <th>登录账号</th>
+        <th>登录密码</th>
+        <th>真实姓名</th>
+        <th>手机号</th>
+        <th>注册身份</th>
+        <th>注册时间</th>
+      </tr>
+      </thead>
+      <tbody>
+      <%
+        java.util.List<bean.User> userList = (java.util.List<bean.User>) request.getAttribute("userList");
+        if(userList != null && !userList.isEmpty()) {
+          for(bean.User u : userList) {
+            String roleStr = u.getRole() != null ? u.getRole().trim() : "";
+            String roleLabel; String roleClass;
+            if("admin".equals(roleStr)) { roleLabel = "系统管理员"; roleClass = "bg-purple"; }
+            else if("merchant".equals(roleStr)) { roleLabel = "入驻商家"; roleClass = "bg-blue"; }
+            else { roleLabel = "普通客户"; roleClass = "bg-green"; }
+      %>
+      <tr>
+        <td>#<%= u.getUserId() %></td>
+        <td><strong><%= u.getUsername() %></strong></td>
+        <td style="font-family: 'SF Mono', monospace; color:#86868b;"><%= u.getPassword() %></td>
+        <td><%= u.getRealName() != null ? u.getRealName() : "—" %></td>
+        <td><%= u.getPhone() != null ? u.getPhone() : "—" %></td>
+        <td><span class="badge <%= roleClass %>"><%= roleLabel %></span></td>
+        <td style="font-size:12px; color:#86868b;"><%= u.getCreateTime() != null ? u.getCreateTime() : "—" %></td>
+      </tr>
+      <% } } else { out.print("<tr><td colspan='7' style='text-align:center; padding: 50px; color:#86868b;'>暂无注册会员</td></tr>"); } %>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="data-panel">
     <h3>🚚 平台订单追踪与发货明细</h3>
     <table>
       <thead>

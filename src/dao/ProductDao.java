@@ -478,6 +478,32 @@ public class ProductDao {
         } catch (Exception e) { e.printStackTrace(); return false; }
     }
 
+    // 🌟 商家专用：在确保商品归属本商家的前提下修改库存（SQL 层物理级数据隔离）
+    public boolean updateStockByMerchant(int productId, int newStock, int merchantId) {
+        String sql = "UPDATE product SET stock = ? WHERE product_id = ? AND merchant_id = ?";
+        util.DBcon db = new util.DBcon();
+        try (java.sql.Connection conn = db.getConnection();
+             java.sql.PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, newStock);
+            pstmt.setInt(2, productId);
+            pstmt.setInt(3, merchantId); // 关键：别人的商品 product_id 在这里改不动
+            return pstmt.executeUpdate() > 0;
+        } catch (Exception e) { e.printStackTrace(); return false; }
+    }
+
+    // 🌟 商家专用：在确保商品归属本商家的前提下上架/下架自己的商品
+    public boolean changeStatusByMerchant(int productId, String newStatus, int merchantId) {
+        String sql = "UPDATE product SET status = ? WHERE product_id = ? AND merchant_id = ?";
+        util.DBcon db = new util.DBcon();
+        try (java.sql.Connection conn = db.getConnection();
+             java.sql.PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, newStatus);
+            pstmt.setInt(2, productId);
+            pstmt.setInt(3, merchantId); // 关键：只能动自己名下的货
+            return pstmt.executeUpdate() > 0;
+        } catch (Exception e) { e.printStackTrace(); return false; }
+    }
+
     // 🌟 2. 自动触发：重新计算并更新商品的平均星级和评价总数
     public void updateProductRating(int productId) {
         // 使用 SQL 聚合函数 COUNT 和 AVG 自动算分
