@@ -1,4 +1,4 @@
-package servlet;
+package servlet.admin;
 
 import dao.ProductDao;
 import jakarta.servlet.*;

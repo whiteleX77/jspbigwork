@@ -1,4 +1,4 @@
-package servlet;
+package servlet.Merchant;
 
 import bean.Product;
 import dao.ProductDao;

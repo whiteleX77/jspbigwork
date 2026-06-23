@@ -16,25 +16,25 @@ public class LoginServlet extends HttpServlet {
 
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         // 1. 设置编码
-        request.setCharacterEncoding("UTF-8");
+        request.setCharacterEncoding("UTF-8"); // 先定编码，杜绝中文乱码
         response.setContentType("text/html;charset=UTF-8");
 
         // 2. 接收前端输入框的值
         String username = request.getParameter("username");
         String password = request.getParameter("password");
-        String code = request.getParameter("code");
+        String code = request.getParameter("code");// 取用户填的验证码
 
-        // 3. 🌟 验证码校验与控制台断点追踪
+        // 3. 验证码校验与控制台断点追踪
         HttpSession session = request.getSession();
-        String sessionCode = (String) session.getAttribute("piccode");
+        String sessionCode = (String) session.getAttribute("piccode");// 取服务端存的答案
 
-        // 🚀 【核心调试锚点】运行后请死盯 IDEA 下方的 Tomcat 控制台输出！
+        // 【核心调试锚点】运行后请死盯 IDEA 下方的 Tomcat 控制台输出！
         System.out.println("================= 登录验证码追踪 =================");
         System.out.println("[前端传过来的验证码] code = " + code);
         System.out.println("[Session中存的验证码] sessionCode = " + sessionCode);
         System.out.println("=================================================");
 
-        // 判空并且使用 equalsIgnoreCase 忽略大小写
+        // 判空并且使用 equalsIgnoreCase 忽略大小写// 不区分大小写比对
         if (sessionCode == null || code == null || !sessionCode.equalsIgnoreCase(code)) {
             response.getWriter().print("<script>alert('验证码输入错误，请重新输入！'); history.back();</script>");
             return;

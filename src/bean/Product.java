@@ -55,10 +55,6 @@ public class Product {
     // 🌟 高级特性：一个商品包含多张图片（体现一对多关系）
     private List<ItemImage> images;
 
-    public int getItemId() {
-        return itemId;
-    }
-
     public void setItemId(int itemId) {
         this.itemId = itemId;
     }
@@ -73,10 +69,6 @@ public class Product {
 
     public int getCategoryId() {
         return categoryId;
-    }
-
-    public void setCategoryId(int categoryId) {
-        this.categoryId = categoryId;
     }
 
     public String getTitle() {
@@ -123,18 +115,6 @@ public class Product {
     }
     public void setStatus(String status) {
         this.status = status;
-    }
-
-    public int getViewCount() {
-        return viewCount;
-    }
-
-    public void setViewCount(int viewCount) {
-        this.viewCount = viewCount;
-    }
-
-    public String getPublishTime() {
-        return publishTime;
     }
 
     public void setPublishTime(String publishTime) {

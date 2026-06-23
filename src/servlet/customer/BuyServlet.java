@@ -1,4 +1,4 @@
-package servlet;
+package servlet.customer;
 
 import bean.OrderVO;
 import bean.Product;

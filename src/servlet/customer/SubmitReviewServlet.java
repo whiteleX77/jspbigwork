@@ -1,4 +1,4 @@
-package servlet;
+package servlet.customer;
 
 import dao.OrderDao;
 import dao.ProductDao;

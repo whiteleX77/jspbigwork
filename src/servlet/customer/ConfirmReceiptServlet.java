@@ -1,4 +1,4 @@
-package servlet;
+package servlet.customer;
 import dao.OrderDao;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.*;

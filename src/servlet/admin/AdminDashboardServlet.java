@@ -1,4 +1,4 @@
-package servlet;
+package servlet.admin;
 
 import bean.Product;
 import bean.User;
